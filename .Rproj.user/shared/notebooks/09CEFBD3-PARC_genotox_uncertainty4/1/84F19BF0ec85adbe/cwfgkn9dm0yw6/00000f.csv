@@ -1,0 +1,3 @@
+"0","EFSAgenotoxDB <-"
+"0","  readxl::read_xlsx(here::here(""input"", ""GENOTOX_incl_codes.xlsx""), sheet = ""coded public"", col_types =""text"") %>% "
+"0","  janitor::clean_names()"

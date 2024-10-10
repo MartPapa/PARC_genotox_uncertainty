@@ -1,0 +1,297 @@
+---
+title: "Genotox_uncertainty"
+author: "Martin Paparella"
+format: html
+editor: visual
+---
+
+# Packages
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(patchwork)
+library(flextable)
+library(gghalves)
+library(writexl)
+library(ggplot2) 
+library(DT)
+
+```
+
+# Load Genotox_DB
+
+```{r}
+EFSAgenotoxDB <-
+  readxl::read_xlsx(here::here("input", "GENOTOX_incl_codes.xlsx"), sheet = "coded public", col_types ="text") %>% 
+  janitor::clean_names()
+```
+
+# Filter for valid data
+
+```{r}
+EFSAgenotoxDB_filtered <- EFSAgenotoxDB %>%
+  filter(acceptability == "Acceptable") %>%
+  filter(guideline_qualifier == "According to" | guideline_qualifier == "Equivalent or similar to") %>%
+  filter(str_detect(genotoxguidelinefulltxt, "471|473|476|487|490|474|475|483|486|488|489")) %>%
+  select(-sub_name, -sub_ecsubinvententryref, -sub_casnumber, -sub_type, -qualifier, -iupacname, -comparamname,-molecularformula,-smilesnotation, -inchi,-smilesnotationsource, -inchi_notationsource,-dar_author, -dar_title, -dar_year, -opinion_title, -publicationdate, -doi, -opinion_pub_year, -opinion_type, -opinion_author,-com_structureshown, -com_type, -testtype, -genotox_endpoint, -com_ecsubinvententryref)%>%
+  distinct()
+
+```
+
+# Analyse data
+
+## grouped by compound
+
+```{r}
+
+unique_results <- unique(EFSAgenotoxDB_filtered$results)
+
+EFSAgenotoxDB_filtered_comp <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name)%>%
+  mutate(
+    n_repl_pos = sum(results == "Positive"),
+    n_repl_neg = sum(results == "Negative"),
+    n_repl_other = sum(results != "Positive" & results != "Negative"),
+    n_repl_total= n())%>%
+  filter(n_repl_total >2)%>%
+  distinct(genotoxguidelinefulltxt, com_name, .keep_all = TRUE)%>%
+  mutate(
+    majority = case_when(
+      n_repl_pos == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "pos",
+      n_repl_neg == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "neg",
+      n_repl_other == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "other"),
+    similarity = ifelse(majority == "pos", n_repl_pos / n_repl_total, 
+                ifelse(majority == "neg", n_repl_neg / n_repl_total, 
+           n_repl_other / n_repl_total)))%>%
+  mutate(below_66_range = similarity <= 0.66, 
+         in_66_85_range = similarity > 0.66 & similarity <= 0.85,
+         above_85_range = similarity > 0.85)%>%  
+  ungroup()%>%
+    group_by(genotoxguidelinefulltxt)%>%
+  mutate(n_comp_perTG = n_distinct(com_name))%>%
+  ungroup()
+
+EFSAgenotoxDB_filtered_comp_maj <- EFSAgenotoxDB_filtered_comp%>%
+  group_by(genotoxguidelinefulltxt, majority, below_66_range, in_66_85_range, above_85_range)%>%
+ mutate(
+  n_comp_majority_bia = n())%>%
+  mutate(perc_comp_bia = round((n_comp_majority_bia/n_comp_perTG)*100, 1)) %>%
+  ungroup()
+
+EFSAgenotoxDB_filtered_comp_maj_TG <- EFSAgenotoxDB_filtered_comp_maj %>%
+  group_by(genotoxguidelinefulltxt)%>%
+  mutate(
+    n_comp_below_66_range = sum(below_66_range, na.rm = TRUE),
+    n_comp_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    n_comp_above_85_range = sum(above_85_range, na.rm = TRUE),
+    perc_below66 = round((n_comp_below_66_range / n_comp_perTG) * 100, 1),
+    perc_66_85 = round((n_comp_in_66_85_range / n_comp_perTG) * 100, 1),
+    perc_above85 = round((n_comp_above_85_range / n_comp_perTG) * 100, 1),
+    min_replicates_perComp_perTG = min(n_repl_total, na.rm = TRUE),   
+    median_replicates_perComp_perTG = median(n_repl_total, na.rm = TRUE),
+    max_replicates_perComp_perTG = max(n_repl_total, na.rm = TRUE),
+    genotoxguidelinefulltxt =paste0(gsub("OECD Guideline", "TG", genotoxguidelinefulltxt), " UnGr")) %>%
+  rename(TG_analysis = genotoxguidelinefulltxt)%>%
+  
+  select(com_name, com_casnumber, TG_analysis, method_type, majority, below_66_range, in_66_85_range, above_85_range, n_comp_majority_bia, perc_comp_bia, n_comp_below_66_range,n_comp_in_66_85_range, n_comp_above_85_range, n_comp_perTG, perc_below66, perc_66_85, perc_above85, min_replicates_perComp_perTG, median_replicates_perComp_perTG, max_replicates_perComp_perTG) %>%
+
+  mutate(TG_analysis = str_replace(TG_analysis, "TG 489", "TG 489 (In vivo COMET)"))%>%
+  mutate(TG_analysis = str_replace(TG_analysis, "Mammalian", ""))
+  
+  
+
+write_xlsx(EFSAgenotoxDB_filtered_comp_maj_TG, here::here("tables", "EFSAgenotoxDB_filtered_comp_maj_TG.xlsx"))
+
+#split dataframe
+variability_per_TG <-EFSAgenotoxDB_filtered_comp_maj_TG %>%
+  distinct(TG_analysis, .keep_all=TRUE)%>%
+  select(TG_analysis,n_comp_below_66_range,n_comp_in_66_85_range, n_comp_above_85_range, n_comp_perTG, perc_below66, perc_66_85, perc_above85, min_replicates_perComp_perTG, median_replicates_perComp_perTG, max_replicates_perComp_perTG )
+
+pos_neg_distribution_per_TG <-EFSAgenotoxDB_filtered_comp_maj_TG %>%
+  distinct(TG_analysis, majority, below_66_range, in_66_85_range, above_85_range, .keep_all=TRUE)%>%
+  select(TG_analysis, method_type, majority, below_66_range, in_66_85_range, above_85_range, n_comp_majority_bia, perc_comp_bia)%>%
+arrange(TG_analysis, majority, above_85_range, in_66_85_range, below_66_range)
+
+write_xlsx(variability_per_TG, here::here("tables", "variability_per_TG.xlsx"))
+write_xlsx(pos_neg_distribution_per_TG, here::here("tables", "pos_neg_distribution_per_TG.xlsx"))
+```
+
+#### Visualize variability per TG
+
+```{r}
+pos_neg_distribution_per_TG_reshaped <- pos_neg_distribution_per_TG  %>%
+  mutate(neg = ifelse(majority == "neg", n_comp_majority_bia, 0),
+         pos = ifelse(majority == "pos", n_comp_majority_bia, 0),
+         other = ifelse(majority == "other", n_comp_majority_bia, 0)) %>%
+  group_by(TG_analysis, method_type,above_85_range, in_66_85_range, below_66_range) %>%
+  summarise(neg = sum(neg),
+            other = sum(other),
+            pos = sum(pos)) %>%
+  ungroup()
+
+write_xlsx(pos_neg_distribution_per_TG_reshaped, here::here("tables", "pos_neg_distribution_per_TG_reshaped.xlsx"))
+
+
+long_data <- variability_per_TG %>%
+  mutate(guideline_text_wrapped = str_wrap(TG_analysis, width = 30),
+         TG_analysis_label = paste(guideline_text_wrapped, " (n=", n_comp_perTG, ")\n", 
+                                   "min/med/max_repl/comp: ", min_replicates_perComp_perTG, "/", median_replicates_perComp_perTG, "/", max_replicates_perComp_perTG, sep = ""))%>%
+  pivot_longer(cols = c("perc_below66", "perc_66_85", "perc_above85"),
+               names_to = "Category",
+               values_to = "Percentage") %>%
+  mutate(Category = factor(Category, levels = c("perc_below66","perc_66_85", "perc_above85")))
+
+# Erstellen des Plots
+ggplot(long_data, aes(x = TG_analysis_label, y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red")) +
+  theme_minimal() +
+  labs(x = "", y = "Percentage", fill = "Range Category") +
+  ggtitle("Variability grouped by compounds") +
+  theme(axis.text.x = element_text(angle = 75, hjust = 0, vjust = 0.1))
+
+# Speichern des Plots als PNG
+ggsave(plot = last_plot(), filename = "bardiagram_EFSAgenotoxDB_filtered_probs.png", 
+       path = here::here("figures"), height = 200, width = 300, units = "mm", device = "png")
+
+
+```
+
+visualize
+
+## grouped by compound_name & literature_reference
+
+```{r}
+EFSAgenotoxDB_filtered_comp_lit <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name, literature_reference) %>%
+ mutate(result_lit = ifelse(all(results == "Negative"),"negative", ifelse(any(results == "Positive"), "positive", "other")))%>%
+  ungroup()%>%
+  distinct(genotoxguidelinefulltxt, com_name, literature_reference, .keep_all = TRUE)  %>%
+ group_by(genotoxguidelinefulltxt, com_name)%>%
+  mutate(
+    n_repl_pos = sum(result_lit == "positive"),
+    n_repl_neg = sum(result_lit == "negative"),
+    n_repl_other = sum(result_lit == "other"),
+    n_repl_total= n())%>%
+  filter(n_repl_total >2)%>%
+  distinct(genotoxguidelinefulltxt, com_name, .keep_all = TRUE)%>%
+  mutate(
+    majority = case_when(
+      n_repl_pos == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "pos",
+      n_repl_neg == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "neg",
+      n_repl_other == max(n_repl_pos, n_repl_neg, n_repl_other) ~ "other"),
+    similarity = ifelse(majority == "pos", n_repl_pos / n_repl_total, ifelse(majority == "neg", n_repl_neg / n_repl_total, 
+           n_repl_other / n_repl_total)))%>%
+  mutate(below_66_range = similarity <= 0.66, 
+         in_66_85_range = similarity > 0.66 & similarity <= 0.85,
+         above_85_range = similarity > 0.85)%>%  
+  ungroup()%>%
+    group_by(genotoxguidelinefulltxt)%>%
+  mutate(n_comp_perTG = n_distinct(com_name, literature_reference))%>%
+  ungroup()
+
+EFSAgenotoxDB_filtered_comp_maj_lit <- EFSAgenotoxDB_filtered_comp_lit %>%
+  group_by(genotoxguidelinefulltxt, majority, below_66_range, in_66_85_range, above_85_range)%>%
+ mutate(
+  n_comp_majority_bia = n())%>%
+  mutate(perc_comp_bia = round((n_comp_majority_bia/n_comp_perTG)*100, 1)) %>%
+  ungroup()
+
+EFSAgenotoxDB_filtered_comp_maj_TG_lit <- EFSAgenotoxDB_filtered_comp_maj_lit %>%
+  group_by(genotoxguidelinefulltxt)%>%
+  mutate(
+    n_comp_below_66_range = sum(below_66_range, na.rm = TRUE),
+    n_comp_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    n_comp_above_85_range = sum(above_85_range, na.rm = TRUE),
+    perc_below66 = round((n_comp_below_66_range / n_comp_perTG) * 100, 1),
+    perc_66_85 = round((n_comp_in_66_85_range / n_comp_perTG) * 100, 1),
+    perc_above85 = round((n_comp_above_85_range / n_comp_perTG) * 100, 1),
+    min_replicates_perComp_perTG = min(n_repl_total, na.rm = TRUE),   
+    median_replicates_perComp_perTG = median(n_repl_total, na.rm = TRUE),
+    max_replicates_perComp_perTG = max(n_repl_total, na.rm = TRUE),
+    genotoxguidelinefulltxt =paste0(gsub("OECD Guideline", "TG", genotoxguidelinefulltxt), " RefGr")) %>%
+  rename(TG_analysis = genotoxguidelinefulltxt)%>%
+  
+  select(com_name, com_casnumber, TG_analysis, method_type, majority, below_66_range, in_66_85_range, above_85_range, n_comp_majority_bia, perc_comp_bia, n_comp_below_66_range,n_comp_in_66_85_range, n_comp_above_85_range, n_comp_perTG, perc_below66, perc_66_85, perc_above85, min_replicates_perComp_perTG, median_replicates_perComp_perTG, max_replicates_perComp_perTG) %>%
+
+mutate(
+  TG_analysis = str_replace(TG_analysis, "TG 489", "TG 489 (In vivo COMET)"))%>%
+mutate(TG_analysis = str_replace(TG_analysis, "Mammalian", ""))
+  
+
+write_xlsx(EFSAgenotoxDB_filtered_comp_maj_TG_lit, here::here("tables", "EFSAgenotoxDB_filtered_comp_maj_TG_lit.xlsx"))
+
+#split data-frame
+
+variability_per_TG_lit <-EFSAgenotoxDB_filtered_comp_maj_TG_lit %>%
+  distinct(TG_analysis, .keep_all=TRUE)%>%
+  select(TG_analysis,n_comp_below_66_range,n_comp_in_66_85_range, n_comp_above_85_range, n_comp_perTG, perc_below66, perc_66_85, perc_above85, min_replicates_perComp_perTG, median_replicates_perComp_perTG, max_replicates_perComp_perTG)
+
+pos_neg_distribution_per_TG_lit <-EFSAgenotoxDB_filtered_comp_maj_TG_lit %>%
+  distinct(TG_analysis, majority, below_66_range, in_66_85_range, above_85_range, .keep_all=TRUE)%>%
+  select(TG_analysis, method_type, majority, below_66_range, in_66_85_range, above_85_range, n_comp_majority_bia, perc_comp_bia)%>%
+arrange(TG_analysis, majority, above_85_range, in_66_85_range, below_66_range)
+
+write_xlsx(variability_per_TG_lit, here::here("tables", "variability_per_TG_lit.xlsx"))
+write_xlsx(pos_neg_distribution_per_TG_lit, here::here("tables", "pos_neg_distribution_per_TG_lit.xlsx"))
+```
+
+#### Visualize
+
+```{r}
+pos_neg_distribution_per_TG_reshaped_lit <- pos_neg_distribution_per_TG_lit  %>%
+  mutate(neg = ifelse(majority == "neg", n_comp_majority_bia, 0),
+         pos = ifelse(majority == "pos", n_comp_majority_bia, 0),
+         other = ifelse(majority == "other", n_comp_majority_bia, 0)) %>%
+  group_by(TG_analysis, method_type,above_85_range, in_66_85_range, below_66_range) %>%
+  summarise(neg = sum(neg),
+            other = sum(other),
+            pos = sum(pos)) %>%
+  ungroup()
+
+write_xlsx(pos_neg_distribution_per_TG_reshaped_lit, here::here("tables", "pos_neg_distribution_per_TG_reshaped_lit.xlsx"))
+
+long_data_RefGrouped <- variability_per_TG_lit %>%
+  mutate(guideline_text_wrapped = str_wrap(TG_analysis, width = 30),
+         TG_analysis_label = paste(guideline_text_wrapped, " (n=", n_comp_perTG, ")\n", 
+                                   "min/med/max_repl/comp: ", min_replicates_perComp_perTG, "/", median_replicates_perComp_perTG, "/", max_replicates_perComp_perTG, sep = ""))%>%
+  pivot_longer(cols = c("perc_below66", "perc_66_85", "perc_above85"),
+               names_to = "Category",
+               values_to = "Percentage") %>%
+  mutate(Category = factor(Category, levels = c("perc_below66","perc_66_85", "perc_above85")))
+
+ggplot(long_data_RefGrouped, aes(x = TG_analysis_label, y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red")) +
+  theme_minimal() +
+  labs(x = "", y = "Percentage", fill = "Range Category") +
+  ggtitle("Variability grouped by compounds and literature references") +
+  theme(axis.text.x = element_text(angle = 75, hjust = 0, vjust = 0.1))
+
+# Speichern des Plots als PNG
+ggsave(plot = last_plot(), filename = "bardiagram_EFSAgenotoxDB_filtered_LitRef_probs.png", path = here::here("figures"), height = 200, width = 300, units = "mm", device = "png")
+```
+
+# Combined plot
+
+```{r}
+long_data_joined <- long_data %>%
+  full_join(long_data_RefGrouped) %>%
+  mutate(TG_analysis_label = factor(TG_analysis_label, levels = sort(unique(TG_analysis_label))))
+
+# Erstellen des Plots mit der neuen Reihenfolge der Labels
+plot <- ggplot(long_data_joined, aes(x = TG_analysis_label, y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red")) +
+  theme_minimal() +
+  labs(x = "", y = "Percentage", fill = "Range Category") +
+  ggtitle("") +
+  theme(axis.text.x = element_text(angle = 80, hjust = 0, vjust = 0.1))
+
+# Speichern des Plots als PNG
+ggsave(plot = plot, filename = "bardiagram_EFSAgenotoxDB_filtered_joined_probs.png", path = here::here("figures"), height = 200, width = 300, units = "mm", device = "png")
+
+```

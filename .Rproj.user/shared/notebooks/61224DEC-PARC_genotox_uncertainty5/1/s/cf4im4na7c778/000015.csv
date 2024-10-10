@@ -1,0 +1,4 @@
+"0",""
+"0","# Speichern des Plots als PNG"
+"0","ggsave(plot = last_plot(), filename = ""bardiagram_EFSAgenotoxDB_filtered_probs.png"", "
+"0","       path = here::here(""figures""), height = 200, width = 300, units = ""mm"", device = ""png"")"

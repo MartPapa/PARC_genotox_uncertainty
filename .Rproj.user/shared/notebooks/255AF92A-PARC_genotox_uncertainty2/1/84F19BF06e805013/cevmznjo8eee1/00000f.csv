@@ -1,0 +1,5 @@
+"0","EFSAgenotoxDB_inVivo <- EFSAgenotoxDB %>%"
+"0","  filter(acceptability == ""Acceptable"")%>%"
+"0","  filter(guideline_qualifier == ""According to"" | guideline_qualifier == ""Equivalent or similar to"")%>%"
+"0","  filter(str_detect(genotoxguidelinefulltxt,""474|475|483|486|488|489""))"
+"0","  "

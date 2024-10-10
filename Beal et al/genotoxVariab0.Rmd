@@ -1,0 +1,165 @@
+---
+title: "Genotox_Variability"
+output: html_document
+date: "2024-01-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r setup, include=TRUE}
+if (!requireNamespace("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+if (!requireNamespace("readxl", quietly = TRUE)) {
+  install.packages("readxl")
+}
+if (!requireNamespace("tidygraph", quietly = TRUE)) {
+  install.packages("tidygraph")
+}
+if(!requireNamespace("gginnards", quietly = TRUE)) {
+  install.packages("gginnards")
+}
+
+library(tidyverse)
+library(tidygraph)
+library(gginnards)
+library(scales)
+library(readxl)
+library(ggplot2)
+library(writexl)
+library(purrr)
+
+```
+
+## 1 load and clean data
+
+```{r , echo=FALSE}
+pfad <- "C:/Users/q192mp/Documents/R/GenoTox"
+dateinameBeal <- "Beal_GTTC_BMDs.xlsx"
+fullpathBeal <- file.path(pfad, dateinameBeal)
+
+setwd(pfad)
+
+# Einlesen der spezifischen Blätter aus der ENV-DB xls Datei
+Beal <- read_xlsx(fullpathBeal, sheet = "Summary")%>% 
+                  janitor::clean_names() %>% 
+                  mutate(casrn = as.character(casrn))
+
+```
+# calculate frequency of cas and of cas & class & endpoint
+```{r }
+
+Beal_frequCas <- Beal %>%
+  group_by(casrn) %>%
+  summarise(Frequency = n())
+
+ write_xlsx(Beal_frequCas, path ="Beal_frequCas.xlsx")
+
+ Beal_frequ <- Beal %>%
+  group_by(casrn, class, endpoint) %>%
+  mutate(n = n())
+
+ write_xlsx(Beal_frequ, path ="Beal_frequ.xlsx")
+
+```
+
+# plot variabilities for chemicals with in vivo MN test data
+
+```{r }
+
+# Ersetzen von "NA" Zeichenketten durch echte NA-Werte
+Beal0 <- Beal_frequ %>%
+  mutate(
+    loael = na_if(loael, "NA"),
+    bmd100 = na_if(bmd100, "NA")
+  ) %>%
+  group_by(casrn, class, endpoint) %>%
+    mutate(
+    loael = as.numeric(loael),
+    bmd100 = as.numeric(bmd100),
+    bmd100orLoael = coalesce(loael, bmd100)) %>%
+    filter(n >3)
+    
+write_xlsx(Beal0,path="Beal0.xlsx")
+
+variability_invivo_MN <- Beal0 %>%
+  filter(class == "in vivo", endpoint == "MN") %>%
+  ggplot(aes(x = bmd100orLoael, y = reorder(casrn, n))) +
+  geom_jitter(width = 0.0000000001, alpha = 0.5, color = "red", size = 0.5) +
+  geom_boxplot(outlier.alpha = 0.75, alpha = 0.5, width = 0.3, color = "black", linewidth = 0.2, outlier.size = 0.5) +
+  scale_x_log10(breaks = 10^(-4:2)) +
+  labs(y = "casrn", x = "BMD100 or LOAEL", fill = "", title = "variability_invivo_MN") +
+  theme(axis.text.y = element_text(hjust = 1, size = 10))
+
+
+ggsave(plot = last_plot(), filename = "variability_invivo_MN.png", dpi = 300, width = 16, height = 8, units = "in")
+
+```
+# calculate summary statistics
+```{r }
+
+variability_summarized <- Beal0 %>%
+  group_by(casrn, class, endpoint) %>% 
+  summarize(mean = mean(bmd100orLoael, na.rm = TRUE),
+            median = median(bmd100orLoael, na.rm = TRUE),
+            sd = sd(bmd100orLoael, na.rm = TRUE),
+            cv= (sd / mean) * 100,
+            n = n(),
+    .groups = 'drop')  # Entfernt die Gruppierung nach dem Zusammenfassen
+
+write_xlsx(variability_summarized, path="variability_summarized")
+
+```
+# 9 plot CVs 
+
+```{r }
+ggplot(variability_summarized, aes(x = interaction(class, endpoint), y = cv)) +
+  geom_boxplot(alpha = 0.7) + # Stellt den Boxplot dar, alpha für Transparenz
+  geom_jitter(aes(color = casrn), width = 0.2, size = 1.5, alpha = 0.6) + # Fügt jittered Datenpunkte hinzu
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "CVs for each combination of class&endpoint",
+       x = "",
+       y = "CV (%)") +
+  theme_minimal() +
+ scale_color_viridis_d() 
+
+# Optional: Speichern des Plots
+ggsave("CV_Boxplots_with_Data_Points_per_Class_and_Endpoint.png", width = 12, height = 8, dpi = 300)
+
+
+```
+
+# 6a plot results for all replicate daphn/fish Ratios 
+
+```{r }
+
+
+ggplot(Beal0, aes(x = bmd100orLoael, y = interaction(class, endpoint), fill = casrn)) +
+  geom_density(alpha = 0.1) +# Ändern Sie alpha für Transparenz
+  facet_wrap(~ interaction(class, endpoint), scales = "free", nrow = length(variability_summarized$casrn)) + 
+  theme_minimal() + # Minimalistisches Thema
+  labs(title = "Variability genotoxicity methods", 
+       x = "BMD100 or LOAEL", 
+       y = "density") +
+  scale_x_log10() +
+  scale_color_viridis_d()
+
+ggsave(plot = last_plot(), filename = "Beal0.png", width = 10, height = 45, dpi = 300)
+
+  
+
+```
+
+
+
+```
+
+### end

@@ -1,0 +1,57 @@
+"0","EFSAgenotoxDB_filtered_probs <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name) %>%
+  mutate(count_entries = n()) %>%
+  filter(count_entries > 2) %>%
+  mutate(
+    positive_count = sum(results == ""Positive""),
+    negative_count = sum(results == ""Negative""),
+    other_count = sum(results != ""Positive"" & results != ""Negative""),
+    majority = case_when(
+      positive_count == max(positive_count, negative_count, other_count) ~ ""pos"",
+      negative_count == max(positive_count, negative_count, other_count) ~ ""neg"",
+      other_count == max(positive_count, negative_count, other_count) ~ ""other"")
+    ) %>%
+  ungroup()%>%
+  group_by(genotoxguidelinefulltxt)%>%
+  mutate(min_replicates = min(count_entries, na.rm = TRUE),   
+         median_replicates = median(count_entries, na.rm = TRUE),
+         max_replicates = max(count_entries, na.rm = TRUE),
+         pos=sum(majority == ""pos""),
+         neg=sum(majority== ""neg""),
+         other=(sum(majority == ""other"")))%>%
+  ungroup()%>%
+  group_by(genotoxguidelinefulltxt, com_name, results) %>%
+  mutate(count_pos_neg_o = n())%>%
+  mutate(percent_pos_neg_o = count_pos_neg_o / count_entries) %>%
+  distinct(genotoxguidelinefulltxt, com_name, results, .keep_all = TRUE) %>%
+  mutate(below_66_range = percent_pos_neg_o >= 0.44 & percent_pos_neg_o <= 0.66) %>%
+  mutate(in_66_85_range = percent_pos_neg_o >= 0.15 & percent_pos_neg_o < 0.44 | percent_pos_neg_o > 0.66 & percent_pos_neg_o <= 0.85) %>%
+  mutate(above_85_range = percent_pos_neg_o < 0.15 | percent_pos_neg_o > 0.85) %>%
+  ungroup() %>%
+  distinct(genotoxguidelinefulltxt, com_name, .keep_all = TRUE)%>%
+  select(-iupacname, -comparamname,-molecularformula,-smilesnotation, -inchi,-smilesnotationsource, -inchi_notationsource,-dar_author, -dar_title, -dar_year)%>%
+  group_by(genotoxguidelinefulltxt)%>%
+  mutate(
+    count_below_66_range = sum(below_66_range, na.rm = TRUE),
+    count_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    count_above_85_range = sum(above_85_range, na.rm = TRUE),
+    total_n = count_below_66_range + count_in_66_85_range + count_above_85_range,
+    perc_below66 = round((count_below_66_range / total_n) * 100, 1),
+    perc_66_85 = round((count_in_66_85_range / total_n) * 100, 1),
+    perc_above85 = round((count_above_85_range / total_n) * 100, 1),
+    genotoxfullguidelinetext =gsub(""OECD Guideline"", """", genotoxfullguidelinetext),
+    TG_analysis = paste(""TG"", genotoxguidelinefulltxt, ""_UnGrouped"", sep = """"))%>%
+  ungroup()%>%
+  select(TG_analysis, count_below_66_range,count_in_66_85_range, count_above_85_range, total_n, perc_below66, perc_66_85, perc_above85, min_replicates, median_replicates, max_replicates,pos, neg, other)%>%
+  distinct(TG_analysis, .keep_all = TRUE) 
+"
+"1","[1m[33mError[39m in `mutate()`:[22m
+[38;5;232m[36mℹ[38;5;232m In argument: `genotoxfullguidelinetext = gsub(""OECD Guideline"", """", genotoxfullguidelinetext)`.
+[36mℹ[38;5;232m In group 1: `genotoxguidelinefulltxt = ""OECD Guideline 471 (Bacterial Reverse Mutation Assay)""`.[39m
+[1mCaused by error in `is.factor()`:[22m
+[33m![39m object 'genotoxfullguidelinetext' not found
+Backtrace:
+[90m  1. [39m... %>% distinct(TG_analysis, .keep_all = TRUE)
+[90m 12. [39m[1mbase[22m::gsub(""OECD Guideline"", """", genotoxfullguidelinetext)
+[90m 13. [39mbase::is.factor(x)
+"

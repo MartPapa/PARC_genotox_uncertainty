@@ -1,0 +1,17 @@
+"0","EFSAgenotoxDB_filtered_probs <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name) %>%
+  mutate(count_entries = n())%>%
+  filter(count_entries > 2) %>%
+  ungroup()%>%
+  group_by(genotoxguidelinefulltxt)%>%
+  mutate(min_replicates = min(count_entries, na.rm = TRUE),   
+         max_replicates = max(count_entries, na.rm = TRUE),   
+         median_replicates = median(count_entries, na.rm = TRUE)
+  ) %>%
+  ungroup()%>%
+  group_by(genotoxguidelinefulltxt, com_name, results) %>%
+  mutate(count_pos_neg = n())
+"
+"2","Error in EFSAgenotoxDB_filtered %>% group_by(genotoxguidelinefulltxt,  : 
+  could not find function ""%>%""
+"

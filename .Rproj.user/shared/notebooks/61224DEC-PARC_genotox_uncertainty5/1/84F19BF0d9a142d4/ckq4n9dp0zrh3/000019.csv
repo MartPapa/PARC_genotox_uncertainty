@@ -1,0 +1,12 @@
+"0","EFSAgenotoxDB_filtered_comp0 <- EFSAgenotoxDB_filtered %>%
+  distinct(genotoxguidelinefulltxt, com_name, .keep_all = TRUE)%>%
+  mutate(n_comp_perTG=(n))
+"
+"1","[1m[33mError[39m in `mutate()`:[22m
+[38;5;232m[36mℹ[38;5;232m In argument: `n_comp_perTG = (n)`.[39m
+[1mCaused by error:[22m
+[38;5;232m[33m![38;5;232m `n_comp_perTG` must be a vector, not a function.[39m
+Backtrace:
+[90m 1. [39m... %>% mutate(n_comp_perTG = (n))
+[90m 9. [39m[1mdplyr[22m:::dplyr_internal_error(""dplyr:::mutate_not_vector"", `<named list>`)
+"

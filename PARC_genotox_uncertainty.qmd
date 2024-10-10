@@ -1,0 +1,77 @@
+---
+title: "Genotox_uncertainty"
+author: "Martin Paparella"
+format: html
+editor: visual
+---
+
+# Packages
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(patchwork)
+library(flextable)
+library(gghalves)
+library(writexl)
+library(ggplot2) 
+
+```
+
+# Load Genotox_DB
+
+```{r}
+EFSAgenotoxDB <-
+  readxl::read_xlsx(here::here("input", "GENOTOX_incl_codes.xlsx"), sheet = "Genotox data", col_types ="text") %>% 
+  janitor::clean_names()
+```
+
+# Filter for valid data
+
+```{r}
+EFSAgenotoxDB_474 <- EFSAgenotoxDB %>%
+  filter(acceptability == "Acceptable")%>%
+  filter(guideline_qualifier == "According to" | guideline_qualifier == "Equivalent or similar to")%>%
+  filter(str_detect(genotoxguidelinefulltxt,"474"))
+  
+```
+
+# Analyse data
+
+```{r}
+EFSAgenotoxDB_474_probs <- EFSAgenotoxDB_474 %>%
+  select(!opinion_type)%>%
+ select(!opinion_author)%>%
+  group_by(sub_name) %>%
+  mutate(count_entries = n()) %>%
+  ungroup()%>%
+  filter(count_entries > 2)%>%
+  group_by(com_name, results) %>%
+  mutate(count_pos_neg = n())%>%
+  mutate(percent_pos_neg = count_pos_neg/count_entries)%>%
+ distinct(sub_name, results, .keep_all = TRUE)%>%
+ mutate(below_60_range = percent_pos_neg >= 0.40 & percent_pos_neg <= 0.60)%>%
+mutate(in_60_85_range = percent_pos_neg >= 0.15 & percent_pos_neg < 0.4 | percent_pos_neg > 0.6 & percent_pos_neg <= 0.85 )%>%
+mutate(above_85_range = percent_pos_neg < 0.15 | percent_pos_neg > 0.85 )%>%
+   ungroup()%>%
+  distinct(sub_name, .keep_all = TRUE)
+
+EFSAgenotoxDB_474_probs_sum <- EFSAgenotoxDB_474_probs%>%
+summarise(
+    count_below_60_range = sum(below_60_range, na.rm = TRUE),
+    count_in_60_85_range = sum(in_60_85_range, na.rm = TRUE),
+    count_above_85_range = sum(above_85_range, na.rm = TRUE),
+  )%>%
+  mutate(total_n = count_below_60_range + count_in_60_85_range+count_above_85_range)%>%
+  mutate(perc_below60 = round((count_below_60_range / total_n) * 100, 1))%>%
+  mutate(perc_60_85 = round((count_in_60_85_range / total_n) * 100, 1))%>%
+  mutate(perc_above85e = round((count_above_85_range / total_n) * 100, 1))
+  
+
+write_xlsx(EFSAgenotoxDB_474_probs_sum, here::here("tables", "EFSAgenotoxDB_474_probs_sum.xlsx"))
+
+
+
+```

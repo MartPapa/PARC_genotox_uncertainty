@@ -1,0 +1,7 @@
+"0","EFSAgenotoxDB_filtered <- EFSAgenotoxDB %>%"
+"0","  filter(acceptability == ""Acceptable"") %>%"
+"0","  filter(guideline_qualifier == ""According to"" | guideline_qualifier == ""Equivalent or similar to"") %>%"
+"0","  filter(str_detect(genotoxguidelinefulltxt, ""471|473|476|487|490|474|475|483|486|488|489"")) %>%"
+"0","  select(-sub_name, -sub_ecsubinvententryref, -sub_casnumber, -sub_type, -qualifier, -iupacname, -comparamname,-molecularformula,-smilesnotation, -inchi,-smilesnotationsource, -inchi_notationsource,-dar_author, -dar_title, -dar_year, -opinion_title, -publicationdate, -doi, -opinion_pub_year, -opinion_type, -opinion_author,-com_structureshown, -com_type, -testtype, -genotox_endpoint, -com_ecsubinvententryref)%>%"
+"0","  distinct()"
+"0",""

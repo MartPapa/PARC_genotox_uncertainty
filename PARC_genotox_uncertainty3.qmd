@@ -1,0 +1,135 @@
+---
+title: "Genotox_uncertainty"
+author: "Martin Paparella"
+format: html
+editor: visual
+---
+
+# Packages
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(patchwork)
+library(flextable)
+library(gghalves)
+library(writexl)
+library(ggplot2) 
+
+```
+
+# Load Genotox_DB
+
+```{r}
+EFSAgenotoxDB <-
+  readxl::read_xlsx(here::here("input", "GENOTOX_incl_codes.xlsx"), sheet = "coded public", col_types ="text") %>% 
+  janitor::clean_names()
+```
+
+# Filter for valid data
+
+```{r}
+EFSAgenotoxDB_inVivo <- EFSAgenotoxDB %>%
+  filter(acceptability == "Acceptable")%>%
+  filter(guideline_qualifier == "According to" | guideline_qualifier == "Equivalent or similar to")%>%
+  filter(str_detect(genotoxguidelinefulltxt,"474|475|483|486|488|489"))
+  
+```
+
+# Analyse data
+
+## grouped by compound
+
+```{r}
+
+EFSAgenotoxDB_inVivo_probs <- EFSAgenotoxDB_inVivo %>%
+  select(!opinion_type)%>%
+ select(!opinion_author)%>%
+  group_by(genotoxguidelinefulltxt,com_name) %>%
+  mutate(count_entries = n()) %>%
+  ungroup()%>%
+  filter(count_entries > 2)%>%
+  group_by(genotoxguidelinefulltxt,com_name, results) %>%
+  mutate(count_pos_neg = n())%>%
+  mutate(percent_pos_neg = count_pos_neg/count_entries)%>%
+ distinct(genotoxguidelinefulltxt,com_name, results, .keep_all = TRUE)%>%
+ mutate(below_66_range = percent_pos_neg >= 0.44 & percent_pos_neg <= 0.66)%>%
+mutate(in_66_85_range = percent_pos_neg >= 0.15 & percent_pos_neg < 0.44 | percent_pos_neg > 0.66 & percent_pos_neg <= 0.85 )%>%
+mutate(above_85_range = percent_pos_neg < 0.15 | percent_pos_neg > 0.85 )%>%
+   ungroup()%>%
+  distinct(genotoxguidelinefulltxt,com_name, .keep_all = TRUE)
+
+EFSAgenotoxDB_inVivo_probs_sum_474 <- EFSAgenotoxDB_inVivo_probs%>%
+  filter(str_detect(genotoxguidelinefulltxt,"474"))%>%
+summarise(
+    count_below_66_range = sum(below_66_range, na.rm = TRUE),
+    count_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    count_above_85_range = sum(above_85_range, na.rm = TRUE),
+  )%>%
+  mutate(total_n = count_below_66_range + count_in_66_85_range+count_above_85_range)%>%
+  mutate(perc_below66 = round((count_below_66_range / total_n) * 100, 1))%>%
+  mutate(perc_66_85 = round((count_in_66_85_range / total_n) * 100, 1))%>%
+  mutate(perc_above85e = round((count_above_85_range / total_n) * 100, 1))%>%
+  mutate(TG_analysis = "TG474_UnGrouped")
+
+EFSAgenotoxDB_inVivo_probs_sum_475 <- EFSAgenotoxDB_inVivo_probs%>%
+  filter(str_detect(genotoxguidelinefulltxt,"475"))%>%
+summarise(
+    count_below_66_range = sum(below_66_range, na.rm = TRUE),
+    count_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    count_above_85_range = sum(above_85_range, na.rm = TRUE),
+  )%>%
+  mutate(total_n = count_below_66_range + count_in_66_85_range+count_above_85_range)%>%
+  mutate(perc_below66 = round((count_below_66_range / total_n) * 100, 1))%>%
+  mutate(perc_66_85 = round((count_in_66_85_range / total_n) * 100, 1))%>%
+  mutate(perc_above85e = round((count_above_85_range / total_n) * 100, 1))%>%
+  mutate(TG_analysis = "TG475_UnGrouped")
+  
+rbind(EFSAgenotoxDB_inVivo_probs_sum_474,EFSAgenotoxDB_inVivo_probs_sum_475)
+write_xlsx(rbind(EFSAgenotoxDB_inVivo_probs_sum_474,EFSAgenotoxDB_inVivo_probs_sum_475), here::here("tables", "EFSAgenotoxDB_inVivo_probs_sum.xlsx"))
+```
+
+## grouped by compound_name & literature_reference
+
+```{r}
+EFSAgenotoxDB_474_probs_com_litref <- EFSAgenotoxDB_474 %>%
+  select(!opinion_type)%>%
+ select(!opinion_author)%>%
+  select(!sub_ecsubinvententryref)%>%
+  group_by(com_name, literature_reference) %>%
+ mutate(result_lit = ifelse(all(results == "Negative"), "negative", "positive"))%>%
+  ungroup()%>%
+  distinct(literature_reference, .keep_all = TRUE)%>%
+  group_by(com_name)%>%
+  mutate(count_entries = n()) %>%
+  filter(count_entries > 2)%>%
+  group_by(com_name, result_lit)%>%
+  mutate(count_pos_neg = n())%>%
+  mutate(percent_pos_neg = count_pos_neg/count_entries)%>%
+ distinct(com_name, result_lit, .keep_all = TRUE)%>%
+ mutate(below_66_range = percent_pos_neg >= 0.44 & percent_pos_neg <= 0.66)%>%
+mutate(in_66_85_range = percent_pos_neg >= 0.15 & percent_pos_neg < 0.44 | percent_pos_neg > 0.66 & percent_pos_neg <= 0.85 )%>%
+mutate(above_85_range = percent_pos_neg < 0.15 | percent_pos_neg > 0.85 )%>%
+   ungroup()%>%
+  distinct(com_name, .keep_all = TRUE)
+
+EFSAgenotoxDB_474_probs_com_litref_sum <- EFSAgenotoxDB_474_probs_com_litref%>%
+summarise(
+    count_below_66_range = sum(below_66_range, na.rm = TRUE),
+    count_in_66_85_range = sum(in_66_85_range, na.rm = TRUE),
+    count_above_85_range = sum(above_85_range, na.rm = TRUE),
+  )%>%
+  mutate(total_n = count_below_66_range + count_in_66_85_range+count_above_85_range)%>%
+  mutate(perc_below66 = round((count_below_66_range / total_n) * 100, 1))%>%
+  mutate(perc_66_85 = round((count_in_66_85_range / total_n) * 100, 1))%>%
+  mutate(perc_above85 = round((count_above_85_range / total_n) * 100, 1))%>%
+  mutate(TG_analysis ="TG474_GroupedByRef")
+  
+
+write_xlsx(EFSAgenotoxDB_474_probs_com_litref_sum, here::here("tables", "EFSAgenotoxDB_474_probs_sum_litref.xlsx"))
+
+
+
+```
