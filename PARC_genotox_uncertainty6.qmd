@@ -11,14 +11,8 @@ Quarto enables you to weave together content and executable code into a finished
 
 ```{r}
 library(tidyverse)
-library(ggridges)
-library(patchwork)
-library(flextable)
-library(gghalves)
 library(writexl)
 library(ggplot2) 
-library(DT)
-
 ```
 
 # Load Genotox_DB
@@ -32,12 +26,32 @@ EFSAgenotoxDB <-
 # Filter for valid data
 
 ```{r}
+
+ncol(EFSAgenotoxDB)
+
 EFSAgenotoxDB_filtered <- EFSAgenotoxDB %>%
   filter(acceptability == "Acceptable") %>%
   filter(guideline_qualifier == "According to" | guideline_qualifier == "Equivalent or similar to") %>%
   filter(str_detect(genotoxguidelinefulltxt, "471|473|476|487|490|474|475|483|486|488|489")) %>%
-  select(-sub_name, -sub_ecsubinvententryref, -sub_casnumber, -sub_type, -qualifier, -iupacname, -comparamname,-molecularformula,-smilesnotation, -inchi,-smilesnotationsource, -inchi_notationsource,-dar_author, -dar_title, -dar_year, -opinion_title, -publicationdate, -doi, -opinion_pub_year, -opinion_type, -opinion_author,-com_structureshown, -com_type, -testtype, -genotox_endpoint, -com_ecsubinvententryref)%>%
-  distinct()
+ filter(!(sub_name != com_name & apply(select(., 7:46), 1, function(x) length(unique(x)) == 1)))%>%
+  select(-sub_name, -sub_ecsubinvententryref, -sub_casnumber, -sub_type, -qualifier, -iupacname, -comparamname,-molecularformula,-smilesnotation, -inchi,-smilesnotationsource, -inchi_notationsource,-dar_author, -dar_title, -dar_year, -opinion_title, -publicationdate, -doi, -opinion_type, -opinion_author,-com_structureshown, -com_type, -testtype, -genotox_endpoint, -com_ecsubinvententryref)
+
+write_xlsx(EFSAgenotoxDB_filtered, here::here("tables", "EFSAgenotoxDB_filtered.xlsx"))
+
+EFSAgenotoxDB_filtered_min3_replicates <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name)%>%
+  mutate(n_repl_total= n())%>%
+  filter(n_repl_total >2)
+
+write_xlsx(EFSAgenotoxDB_filtered_min3_replicates, here::here("tables", "EFSAgenotoxDB_filtered_min3_replicates.xlsx"))
+
+EFSAgenotoxDB_filtered_min3_literature_studies <- EFSAgenotoxDB_filtered %>%
+  group_by(genotoxguidelinefulltxt, com_name, literature_reference)%>%
+  mutate(n_repl_lit= n())%>%
+  filter(n_repl_lit >2)
+
+write_xlsx(EFSAgenotoxDB_filtered_min3_literature_studies, here::here("tables", "EFSAgenotoxDB_filtered_min3_literature_studies.xlsx"))
+
 
 ```
 
@@ -119,7 +133,7 @@ write_xlsx(variability_per_TG, here::here("tables", "variability_per_TG.xlsx"))
 write_xlsx(pos_neg_distribution_per_TG, here::here("tables", "pos_neg_distribution_per_TG.xlsx"))
 ```
 
-#### Visualize variability per TG
+#### visualize variability per TG
 
 ```{r}
 pos_neg_distribution_per_TG_reshaped <- pos_neg_distribution_per_TG  %>%
@@ -144,7 +158,7 @@ long_data <- variability_per_TG %>%
                values_to = "Percentage") %>%
   mutate(Category = factor(Category, levels = c("perc_below66","perc_66_85", "perc_above85")))
 
-# Erstellen des Plots
+# create the plot
 ggplot(long_data, aes(x = TG_analysis_label, y = Percentage, fill = Category)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red")) +
@@ -159,8 +173,6 @@ ggsave(plot = last_plot(), filename = "bardiagram_EFSAgenotoxDB_filtered_probs.p
 
 
 ```
-
-visualize
 
 ## grouped by compound_name & literature_reference
 
@@ -239,7 +251,7 @@ write_xlsx(variability_per_TG_lit, here::here("tables", "variability_per_TG_lit.
 write_xlsx(pos_neg_distribution_per_TG_lit, here::here("tables", "pos_neg_distribution_per_TG_lit.xlsx"))
 ```
 
-#### Visualize
+#### visualize variability per TG
 
 ```{r}
 pos_neg_distribution_per_TG_reshaped_lit <- pos_neg_distribution_per_TG_lit  %>%
@@ -271,27 +283,30 @@ ggplot(long_data_RefGrouped, aes(x = TG_analysis_label, y = Percentage, fill = C
   ggtitle("Variability grouped by compounds and literature references") +
   theme(axis.text.x = element_text(angle = 75, hjust = 0, vjust = 0.1))
 
-# Speichern des Plots als PNG
+# safe the plot as png
 ggsave(plot = last_plot(), filename = "bardiagram_EFSAgenotoxDB_filtered_LitRef_probs.png", path = here::here("figures"), height = 200, width = 300, units = "mm", device = "png")
 ```
 
-# Combined plot
+# Combine plots
 
 ```{r}
 long_data_joined <- long_data %>%
   full_join(long_data_RefGrouped) %>%
   mutate(TG_analysis_label = factor(TG_analysis_label, levels = sort(unique(TG_analysis_label))))
 
-# Erstellen des Plots mit der neuen Reihenfolge der Labels
+# Create the plot with the new sequence of the labels
 plot <- ggplot(long_data_joined, aes(x = TG_analysis_label, y = Percentage, fill = Category)) +
   geom_bar(stat = "identity") +
-  scale_fill_manual(values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red")) +
+  scale_fill_manual(
+    values = c("perc_above85" = "green", "perc_66_85" = "yellow", "perc_below66" = "red"),
+    labels = c("perc_above85" = "above85", "perc_66_85" = "66-85", "perc_below66" = "below66")
+  ) +
   theme_minimal() +
   labs(x = "", y = "Percentage", fill = "Range Category") +
   ggtitle("") +
   theme(axis.text.x = element_text(angle = 80, hjust = 0, vjust = 0.1))
 
-# Speichern des Plots als PNG
+# Save the plot as png
 ggsave(plot = plot, filename = "bardiagram_EFSAgenotoxDB_filtered_joined_probs.png", path = here::here("figures"), height = 200, width = 300, units = "mm", device = "png")
 
 ```
